@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LockJaw — Hybrid Encryption Messaging</title>
+<script src="src/lockjaw.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0a0c0f; --bg2:#0f1218; --bg3:#151a22; --panel:#1a2030;
+    --border:#2a3548; --border2:#3a4a60;
+    --accent:#00e5ff; --accent2:#ff6b35; --accent3:#39ff14;
+    --text:#e8edf5; --text2:#8899aa; --text3:#556677;
+    --danger:#ff3a3a; --warn:#ffaa00;
+    --mono:'Share Tech Mono',monospace; --head:'Rajdhani',sans-serif;
+  }
+  body { background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* scanline overlay */
+  body::before { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,255,.01) 2px,rgba(0,229,255,.01) 4px); pointer-events:none; z-index:999; }
+
+  /* header */
+  header { display:flex; align-items:center; justify-content:space-between; padding:8px 20px; border-bottom:1px solid var(--border); background:var(--bg2); flex-shrink:0; }
+  .logo { display:flex; align-items:center; gap:10px; }
+  .logo-wordmark { font-family:var(--head); font-size:20px; font-weight:700; letter-spacing:4px; color:var(--accent); }
+  .logo-sub { font-size:9px; color:var(--text3); letter-spacing:2px; }
+  .badges { display:flex; gap:8px; }
+  .badge { font-size:9px; letter-spacing:1px; padding:2px 8px; border:1px solid var(--border); border-radius:2px; color:var(--text3); display:flex; align-items:center; gap:4px; }
+  .badge.live { border-color:rgba(57,255,20,.4); color:var(--accent3); }
+  .dot { width:5px; height:5px; border-radius:50%; background:currentColor; animation:blink 2s infinite; }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* layout */
+  main { display:flex; flex:1; overflow:hidden; }
+  aside { width:200px; border-right:1px solid var(--border); background:var(--bg2); display:flex; flex-direction:column; flex-shrink:0; }
+  .chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* sidebar */
+  .aside-section { padding:10px 12px; }
+  .aside-label { font-size:9px; letter-spacing:2px; color:var(--text3); margin-bottom:8px; }
+  .peer { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:2px; cursor:pointer; border:1px solid transparent; margin-bottom:2px; transition:.15s; }
+  .peer:hover { background:var(--bg3); }
+  .peer.active { background:rgba(0,229,255,.07); border-color:var(--accent); }
+  .avatar { width:26px; height:26px; border-radius:2px; background:var(--bg3); border:1px solid var(--border2); display:flex; align-items:center; justify-content:center; font-family:var(--head); font-size:12px; font-weight:600; color:var(--accent); flex-shrink:0; }
+  .peer-name { font-size:11px; }
+  .peer-status { font-size:9px; color:var(--text3); }
+  .online-dot { width:5px; height:5px; border-radius:50%; background:var(--accent3); display:inline-block; margin-right:3px; }
+
+  /* chat header */
+  .chat-header { padding:8px 14px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .ch-peer { display:flex; align-items:center; gap:9px; }
+  .ch-name { font-family:var(--head); font-size:15px; font-weight:600; }
+  .ch-meta { font-size:9px; color:var(--text3); }
+  .btn-sm { background:none; border:1px solid var(--border); color:var(--text2); padding:4px 9px; border-radius:2px; cursor:pointer; font-family:var(--mono); font-size:9px; letter-spacing:1px; transition:.15s; }
+  .btn-sm:hover { border-color:var(--accent); color:var(--accent); }
+  .btn-sm.active { border-color:var(--accent3); color:var(--accent3); }
+
+  /* messages */
+  .messages { flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:10px; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  .msg { display:flex; flex-direction:column; max-width:70%; }
+  .msg.mine { align-self:flex-end; align-items:flex-end; }
+  .msg.theirs { align-self:flex-start; }
+  .msg-meta { font-size:9px; color:var(--text3); margin-bottom:2px; }
+  .bubble { padding:8px 11px; border-radius:2px; font-size:12px; line-height:1.55; border:1px solid transparent; }
+  .mine .bubble { background:rgba(0,229,255,.07); border-color:rgba(0,229,255,.2); }
+  .theirs .bubble { background:var(--panel); border-color:var(--border); }
+  .cipher-tag { font-size:9px; color:var(--text3); margin-top:3px; }
+  .cipher-raw { margin-top:4px; padding:5px 7px; background:var(--bg); border:1px solid var(--border); border-radius:2px; font-size:9px; color:var(--accent2); word-break:break-all; line-height:1.4; max-height:60px; overflow-y:auto; }
+  .sys-line { text-align:center; font-size:9px; color:var(--text3); letter-spacing:2px; padding:2px; }
+
+  /* input */
+  .input-panel { border-top:1px solid var(--border); background:var(--bg2); padding:10px 14px; flex-shrink:0; }
+  .controls { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:6px 9px; background:var(--bg3); border:1px solid var(--border); border-radius:2px; flex-wrap:wrap; }
+  .ctrl-lbl { font-size:9px; color:var(--text3); letter-spacing:1px; white-space:nowrap; }
+  .ctrl-inp { background:var(--bg); border:1px solid var(--border2); color:var(--text); font-family:var(--mono); font-size:11px; padding:3px 6px; border-radius:2px; outline:none; }
+  .ctrl-inp:focus { border-color:var(--accent); }
+  .inp-phrase { flex:1; min-width:120px; }
+  .inp-totp { width:76px; letter-spacing:3px; text-align:center; }
+  .layer-pills { display:flex; gap:3px; margin-left:auto; }
+  .pill { font-size:8px; padding:2px 5px; border-radius:1px; border:1px solid; letter-spacing:.5px; }
+  .pill.on { border-color:var(--accent3); color:var(--accent3); background:rgba(57,255,20,.07); }
+  .pill.off { border-color:var(--border); color:var(--text3); }
+  .input-row { display:flex; gap:7px; }
+  textarea.msg-inp { flex:1; background:var(--bg3); border:1px solid var(--border2); color:var(--text); font-family:var(--mono); font-size:13px; padding:8px 10px; border-radius:2px; outline:none; resize:none; line-height:1.5; }
+  textarea.msg-inp:focus { border-color:var(--accent); }
+  textarea.msg-inp::placeholder { color:var(--text3); }
+  .btn-send { background:var(--accent); color:var(--bg); border:none; padding:8px 16px; border-radius:2px; font-family:var(--head); font-size:13px; font-weight:700; letter-spacing:2px; cursor:pointer; transition:.15s; white-space:nowrap; }
+  .btn-send:hover { background:#33eeff; }
+  .btn-send:disabled { background:var(--border); color:var(--text3); cursor:not-allowed; }
+
+  /* connect modal */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.88); display:flex; align-items:center; justify-content:center; z-index:100; }
+  .modal { background:var(--bg2); border:1px solid var(--accent); border-radius:4px; padding:26px; width:360px; }
+  .modal-title { font-family:var(--head); font-size:20px; font-weight:700; letter-spacing:4px; color:var(--accent); margin-bottom:4px; }
+  .modal-sub { font-size:9px; color:var(--text3); letter-spacing:1px; margin-bottom:18px; }
+  .field { margin-bottom:12px; }
+  .field label { display:block; font-size:9px; color:var(--text2); letter-spacing:1px; margin-bottom:4px; }
+  .field input { width:100%; background:var(--bg3); border:1px solid var(--border2); color:var(--text); font-family:var(--mono); font-size:12px; padding:7px 9px; border-radius:2px; outline:none; }
+  .field input:focus { border-color:var(--accent); }
+  .totp-box { text-align:center; background:var(--bg3); border:1px solid var(--border2); border-radius:2px; padding:10px; margin-bottom:14px; }
+  .totp-val { font-family:var(--head); font-size:28px; font-weight:700; letter-spacing:7px; color:var(--accent3); }
+  .totp-hint { font-size:9px; color:var(--text3); margin-top:2px; letter-spacing:1px; }
+  .totp-progress { height:2px; background:var(--bg); border-radius:1px; margin-top:7px; }
+  .totp-fill { height:100%; background:var(--accent3); border-radius:1px; transition:width 1s linear; }
+  .btn-connect { width:100%; background:var(--accent); color:var(--bg); border:none; padding:9px; border-radius:2px; font-family:var(--head); font-size:13px; font-weight:700; letter-spacing:3px; cursor:pointer; }
+  .btn-connect:hover { background:#33eeff; }
+  .notice { margin-top:10px; font-size:9px; color:var(--warn); border:1px solid rgba(255,170,0,.25); background:rgba(255,170,0,.06); border-radius:2px; padding:7px 9px; line-height:1.6; letter-spacing:.5px; }
+
+  /* status bar */
+  footer { padding:4px 16px; border-top:1px solid var(--border); background:var(--bg2); display:flex; gap:16px; font-size:9px; color:var(--text3); flex-shrink:0; }
+  footer span { letter-spacing:1px; }
+  footer .ok { color:var(--accent3); }
+</style>
+</head>
+<body>
+
+<!-- CONNECT MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-title">LOCKJAW</div>
+    <div class="modal-sub">HYBRID ENCRYPTION MESSAGING · v2.1 · ZERO-TRUST E2EE</div>
+    <div class="field">
+      <label>SERVER URL</label>
+      <input id="serverUrl" value="ws://localhost:8765" />
+    </div>
+    <div class="field">
+      <label>NODE IDENTITY</label>
+      <input id="nodeId" value="NEXUS_01" />
+    </div>
+    <div class="field">
+      <label>BEALE PHRASE (shared secret)</label>
+      <input id="phrase" type="password" value="quantum-oracle-7734" />
+    </div>
+    <div class="totp-box">
+      <div class="totp-val" id="totpDisplay">------</div>
+      <div class="totp-hint">LIVE 2FA TOKEN · 30s WINDOW</div>
+      <div class="totp-progress"><div class="totp-fill" id="totpFill" style="width:100%"></div></div>
+    </div>
+    <div class="field">
+      <label>ENTER 2FA CODE</label>
+      <input id="totpInput" type="text" maxlength="6" placeholder="6-digit code" style="letter-spacing:5px;text-align:center;" />
+    </div>
+    <button class="btn-connect" onclick="doConnect()">AUTHENTICATE & CONNECT</button>
+    <div class="notice">⚠ All encryption runs locally. Server relays ciphertext only. Plaintext never leaves this machine.</div>
+  </div>
+</div>
+
+<header>
+  <div class="logo">
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+      <rect x="7" y="14" width="16" height="13" rx="1.5" stroke="#00e5ff" stroke-width="1.5"/>
+      <path d="M10 14V10a5 5 0 0 1 10 0v4" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="15" cy="20.5" r="2" fill="#00e5ff"/>
+    </svg>
+    <div>
+      <div class="logo-wordmark">LOCKJAW</div>
+      <div class="logo-sub">HYBRID ENCRYPTION PROTOCOL</div>
+    </div>
+  </div>
+  <div class="badges">
+    <div class="badge live"><span class="dot"></span>E2EE ACTIVE</div>
+    <div class="badge live"><span class="dot"></span>AES-256-GCM</div>
+    <div class="badge" id="nodeDisplay">NODE: --</div>
+    <div class="badge live"><span class="dot"></span>WS RELAY</div>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <div class="aside-section">
+      <div class="aside-label">SECURE CHANNELS</div>
+      <div class="peer active" id="peer-GHOST_NODE" onclick="selectPeer('GHOST_NODE','GN')">
+        <div class="avatar">GN</div>
+        <div><div class="peer-name">GHOST_NODE</div><div class="peer-status"><span class="online-dot"></span>online</div></div>
+      </div>
+      <div class="peer" id="peer-CIPHER_X" onclick="selectPeer('CIPHER_X','CX')">
+        <div class="avatar" style="color:var(--accent2)">CX</div>
+        <div><div class="peer-name">CIPHER_X</div><div class="peer-status"><span class="online-dot" style="background:var(--text3)"></span>offline</div></div>
+      </div>
+      <div class="peer" id="peer-VAULT_7" onclick="selectPeer('VAULT_7','V7')">
+        <div class="avatar" style="color:var(--accent3)">V7</div>
+        <div><div class="peer-name">VAULT_7</div><div class="peer-status"><span class="online-dot" style="background:var(--text3)"></span>offline</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="chat">
+    <div class="chat-header">
+      <div class="ch-peer">
+        <div class="avatar" id="activePeerAvatar" style="width:32px;height:32px;font-size:13px">GN</div>
+        <div>
+          <div class="ch-name" id="activePeerName">GHOST_NODE</div>
+          <div class="ch-meta">AES-256-GCM · BEALE XOR · MORSE-ASCII · 2FA LOCKED</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" id="rawBtn" onclick="toggleRaw()">SHOW CIPHER</button>
+        <button class="btn-sm" onclick="clearChat()">CLEAR</button>
+      </div>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="input-panel">
+      <div class="controls">
+        <span class="ctrl-lbl">PHRASE</span>
+        <input class="ctrl-inp inp-phrase" id="activePhrase" type="text" value="quantum-oracle-7734" />
+        <span class="ctrl-lbl">2FA</span>
+        <input class="ctrl-inp inp-totp" id="activeTOTP" maxlength="6" placeholder="------" />
+        <div class="layer-pills">
+          <span class="pill on">MORSE</span>
+          <span class="pill on">BEALE</span>
+          <span class="pill on">AES</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <textarea class="msg-inp" id="msgInput" rows="2" placeholder="Type secure message… (Enter to send)"></textarea>
+        <button class="btn-send" id="sendBtn" onclick="sendMsg()">SEND ▶</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span id="ftNode">NODE: --</span>
+  <span id="ftStatus">STATUS: OFFLINE</span>
+  <span id="ftMsgs">MESSAGES: 0</span>
+  <span class="ok" id="ftEnc">E2EE: ARMED</span>
+  <span id="ftTotp">2FA: --</span>
+</footer>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let activePeer    = 'GHOST_NODE';
+let peerAvatar    = 'GN';
+let showRaw       = false;
+let msgCount      = 0;
+let nodeId        = '';
+let phrase        = '';
+let totpCode      = '';
+let simTotp       = '';
+let messages      = {};
+
+// ── Demo TOTP (no real secret in browser demo) ────────────────────────────
+function demoTotp() {
+  const seed = Math.floor(Date.now() / 30_000);
+  let h = seed;
+  for (let i = 0; i < 8; i++) { h = (h * 1664525 + 1013904223) >>> 0; }
+  return String(Math.abs(h % 900_000) + 100_000);
+}
+
+function updateTotpUI() {
+  const now    = Date.now();
+  const remain = 30 - (now % 30_000) / 1_000;
+  const pct    = (remain / 30) * 100;
+  simTotp = demoTotp();
+  document.getElementById('totpDisplay').textContent = simTotp;
+  document.getElementById('totpFill').style.width = pct.toFixed(1) + '%';
+  document.getElementById('ftTotp').textContent = '2FA: ' + simTotp;
+  const active = document.getElementById('activeTOTP');
+  if (active && !active.dataset.userEdited) active.value = simTotp;
+}
+updateTotpUI();
+setInterval(updateTotpUI, 1000);
+
+// ── Render ────────────────────────────────────────────────────────────────
+function getMessages(peer) {
+  if (!messages[peer]) messages[peer] = peer === 'GHOST_NODE' ? [
+    { from: 'GHOST_NODE', text: 'Channel established. Beale layer active.', time: '09:14', cipher: null },
+    { from: 'me',         text: 'Acknowledged. E2EE confirmed on my end.', time: '09:14', cipher: null },
+  ] : [];
+  return messages[peer];
+}
+
+function renderMessages() {
+  const box  = document.getElementById('messages');
+  const msgs = getMessages(activePeer);
+  box.innerHTML = '';
+
+  const sys = document.createElement('div');
+  sys.className = 'sys-line';
+  sys.textContent = '── SESSION ENCRYPTED · AES-256-GCM · E2EE ──';
+  box.appendChild(sys);
+
+  for (const m of msgs) {
+    const mine = m.from === 'me';
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + (mine ? 'mine' : 'theirs');
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.textContent = (mine ? (nodeId || 'YOU') : m.from) + ' · ' + m.time;
+    wrap.appendChild(meta);
+
+    const bub = document.createElement('div');
+    bub.className = 'bubble';
+    bub.textContent = m.text;
+    wrap.appendChild(bub);
+
+    if (m.cipher) {
+      const tag = document.createElement('div');
+      tag.className = 'cipher-tag';
+      tag.textContent = '⬡ ENCRYPTED';
+      wrap.appendChild(tag);
+      if (showRaw) {
+        const raw = document.createElement('div');
+        raw.className = 'cipher-raw';
+        raw.textContent = m.cipher;
+        wrap.appendChild(raw);
+      }
+    }
+    box.appendChild(wrap);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Crypto (pure JS, WebCrypto) ───────────────────────────────────────────
+// Simplified encrypt for demo — uses SubtleCrypto AES-GCM with key from phrase+totp
+async function browserEncrypt(plaintext, phraseVal, totpVal, machineId) {
+  const enc   = new TextEncoder();
+  const keyMat = await crypto.subtle.importKey('raw', enc.encode(phraseVal + totpVal + machineId), 'PBKDF2', false, ['deriveKey']);
+  const key   = await crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt:enc.encode(machineId), iterations:50_000, hash:'SHA-256' },
+    keyMat, { name:'AES-GCM', length:256 }, false, ['encrypt']
+  );
+  // Morse-encode first
+  const morse = textToMorseBinary(plaintext);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ct    = await crypto.subtle.encrypt({ name:'AES-GCM', iv:nonce }, key, morse);
+  const full  = new Uint8Array(nonce.byteLength + ct.byteLength);
+  full.set(nonce); full.set(new Uint8Array(ct), 12);
+  return btoa(String.fromCharCode(...full));
+}
+
+function textToMorseBinary(text) {
+  const MORSE = {A:'.-',B:'-...',C:'-.-.',D:'-..',E:'.',F:'..-.',G:'--.',H:'....',I:'..',J:'.---',K:'-.-',L:'.-..',M:'--',N:'-.',O:'---',P:'.--.',Q:'--.-',R:'.-.',S:'...',T:'-',U:'..-',V:'...-',W:'.--',X:'-..-',Y:'-.--',Z:'--..',0:'-----',1:'.----',2:'..---',3:'...--',4:'....-',5:'.....',6:'-....',7:'--...',8:'---..',9:'----.',' ':' '};
+  const bytes = [];
+  for (const c of text.toUpperCase()) {
+    if (c===' '){bytes.push(3);continue;}
+    const m = MORSE[c]; if(!m) continue;
+    for(const x of m) bytes.push(x==='.'?0:1);
+    bytes.push(2);
+  }
+  return new Uint8Array(bytes);
+}
+
+// ── Send ──────────────────────────────────────────────────────────────────
+async function sendMsg() {
+  const input = document.getElementById('msgInput');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  const phraseVal = document.getElementById('activePhrase').value || 'default';
+  const totpVal   = document.getElementById('activeTOTP').value || simTotp;
+  const time      = new Date().toTimeString().slice(0,5);
+
+  const cipher = await browserEncrypt(text, phraseVal, totpVal, nodeId || 'NODE');
+
+  getMessages(activePeer).push({ from:'me', text, time, cipher });
+  msgCount++;
+  document.getElementById('ftMsgs').textContent = 'MESSAGES: ' + msgCount;
+  input.value = '';
+  renderMessages();
+
+  setTimeout(() => simulateReply(phraseVal, totpVal), 1200 + Math.random()*1000);
+}
+
+async function simulateReply(phraseVal, totpVal) {
+  const replies = [
+    'Message received. Cipher integrity verified.',
+    'Beale layer confirmed. Session synchronized.',
+    'Acknowledged. Standing by for next transmission.',
+    'Decryption successful. E2EE holding strong.',
+    'Copy. Node-to-node tunnel intact.',
+  ];
+  const text  = replies[Math.floor(Math.random()*replies.length)];
+  const time  = new Date().toTimeString().slice(0,5);
+  const cipher = await browserEncrypt(text, phraseVal, totpVal, activePeer);
+  getMessages(activePeer).push({ from:activePeer, text, time, cipher });
+  renderMessages();
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────
+function selectPeer(name, av) {
+  activePeer = name; peerAvatar = av;
+  document.getElementById('activePeerName').textContent = name;
+  document.getElementById('activePeerAvatar').textContent = av;
+  document.querySelectorAll('.peer').forEach(p => p.classList.remove('active'));
+  document.getElementById('peer-'+name)?.classList.add('active');
+  renderMessages();
+}
+
+function toggleRaw() {
+  showRaw = !showRaw;
+  const btn = document.getElementById('rawBtn');
+  btn.textContent = showRaw ? 'HIDE CIPHER' : 'SHOW CIPHER';
+  btn.classList.toggle('active', showRaw);
+  renderMessages();
+}
+
+function clearChat() {
+  messages[activePeer] = [];
+  renderMessages();
+}
+
+function doConnect() {
+  const totp = document.getElementById('totpInput').value;
+  if (!totp || totp.length < 4) {
+    document.getElementById('totpInput').style.borderColor = '#ff3a3a';
+    return;
+  }
+  nodeId = (document.getElementById('nodeId').value || 'NEXUS_01').toUpperCase();
+  phrase = document.getElementById('phrase').value || 'default';
+  totpCode = totp;
+
+  document.getElementById('nodeDisplay').textContent = 'NODE: ' + nodeId;
+  document.getElementById('ftNode').textContent = 'NODE: ' + nodeId;
+  document.getElementById('ftStatus').textContent = 'STATUS: E2EE ACTIVE';
+  document.getElementById('activePhrase').value = phrase;
+  document.getElementById('activeTOTP').value = totpCode;
+  document.getElementById('overlay').style.display = 'none';
+  renderMessages();
+}
+
+// keyboard shortcut
+document.getElementById('msgInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+document.getElementById('activeTOTP').addEventListener('input', e => {
+  e.target.dataset.userEdited = '1';
+});
+</script>
+</body>
+</html>
