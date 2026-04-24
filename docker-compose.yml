@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  lockjaw-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lockjaw
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - LOCKJAW_HOST=0.0.0.0
+      - LOCKJAW_PORT=8765
+      - LOCKJAW_DEBUG=false
+      - LOCKJAW_SECRET_KEY=${LOCKJAW_SECRET_KEY:-CHANGE_ME}
+      - LOCKJAW_SESSION_TTL=3600
+      - LOCKJAW_DATA_DIR=/app/data
+    volumes:
+      - lockjaw_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  lockjaw_data:
