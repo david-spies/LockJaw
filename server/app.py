@@ -7,9 +7,13 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Set
+
+# Ensure the project root is in the path for module discovery
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
@@ -205,8 +209,10 @@ async def websocket_endpoint(websocket: WebSocket, node_id: str):
 
 # ── Run ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    # Using 'server.app:app' ensures Uvicorn can find the instance 
+    # when running from the project root.
     uvicorn.run(
-        "app:app",
+        "server.app:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
