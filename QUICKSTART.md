@@ -24,7 +24,7 @@ cd lockjaw
 ### 2. Create a virtual environment
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate      # macOS / Linux
 .venv\Scripts\activate         # Windows
 ```
@@ -52,7 +52,7 @@ Paste the output as `LOCKJAW_SECRET_KEY` in `.env`.
 ### 5. Start the server
 
 ```bash
-python server/app.py
+python3 -m server.app
 ```
 
 You should see:
@@ -64,7 +64,12 @@ INFO     Uvicorn running on http://0.0.0.0:8765
 
 ### 6. Register your first node
 
-In a new terminal (venv activated):
+In a new terminal (.venv activated):
+
+```bash
+source .venv/bin/activate
+```
+
 
 ```bash
 curl -s -X POST http://localhost:8765/api/auth/register \
